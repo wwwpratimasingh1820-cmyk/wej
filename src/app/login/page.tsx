@@ -11,13 +11,16 @@ export default function Login() {
   const [username, setUsername] = useState('') // For signup
   const [isLogin, setIsLogin] = useState(true)
   const [loading, setLoading] = useState(false)
+  const [resendLoading, setResendLoading] = useState(false)
   const [error, setError] = useState('')
+  const [successMessage, setSuccessMessage] = useState('')
   const router = useRouter()
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError('')
+    setSuccessMessage('')
     
     const supabase = createClient()
     
@@ -39,7 +42,7 @@ export default function Login() {
           }
         })
         if (authError) throw authError
-        alert('Signup successful! You can now log in.')
+        setSuccessMessage('A confirmation email has been sent to your inbox. Please confirm your email before logging in.')
         setIsLogin(true)
         return
       }
@@ -47,7 +50,11 @@ export default function Login() {
       router.push('/')
       router.refresh()
     } catch (err: any) {
-      setError(err.message)
+      if (err.message === 'Email not confirmed') {
+        setError('Please check your email and confirm your address before logging in.')
+      } else {
+        setError(err.message)
+      }
     } finally {
       setLoading(false)
     }
@@ -63,7 +70,47 @@ export default function Login() {
           {isLogin ? 'Welcome Back' : 'Create Account'}
         </h1>
         
-        {error && <div className="p-3 mb-6 text-sm text-red-500 bg-red-500/10 rounded-lg">{error}</div>}
+        {error && (
+          <div className="p-4 mb-6 text-sm text-red-500 bg-red-500/10 rounded-lg flex flex-col gap-2">
+            <span>{error}</span>
+            {error.includes('confirm your address') && (
+              <button 
+                onClick={async () => {
+                  setResendLoading(true)
+                  setError('')
+                  setSuccessMessage('')
+                  try {
+                    const supabase = createClient()
+                    const { error: resendError } = await supabase.auth.resend({
+                      type: 'signup',
+                      email,
+                    })
+                    if (resendError) {
+                      setError('Could not resend email. It might be disabled or already confirmed.')
+                    } else {
+                      setSuccessMessage('Confirmation email resent! Please check your inbox.')
+                    }
+                  } catch (err) {
+                    setError('An unexpected error occurred.')
+                  } finally {
+                    setResendLoading(false)
+                  }
+                }}
+                disabled={resendLoading}
+                className="self-start text-xs font-bold underline hover:no-underline disabled:opacity-50"
+                type="button"
+              >
+                {resendLoading ? 'Resending...' : 'Resend confirmation email'}
+              </button>
+            )}
+          </div>
+        )}
+
+        {successMessage && (
+          <div className="p-4 mb-6 text-sm text-green-500 bg-green-500/10 rounded-lg">
+            {successMessage}
+          </div>
+        )}
 
         <form onSubmit={handleAuth} className="space-y-4">
           {!isLogin && (
