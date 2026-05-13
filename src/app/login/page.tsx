@@ -3,58 +3,71 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
-import { LogIn } from 'lucide-react'
+import { LogIn, AlertTriangle } from 'lucide-react'
 
 export default function Login() {
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [username, setUsername] = useState('') // For signup
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [isLogin, setIsLogin] = useState(true)
   const [loading, setLoading] = useState(false)
-  const [resendLoading, setResendLoading] = useState(false)
   const [error, setError] = useState('')
-  const [successMessage, setSuccessMessage] = useState('')
   const router = useRouter()
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault()
+    
+    const formattedUsername = username.trim().toLowerCase()
+    if (!formattedUsername) {
+      setError('Username is required')
+      return
+    }
+
+    if (!isLogin && password !== confirmPassword) {
+      setError('Passwords do not match')
+      return
+    }
+
     setLoading(true)
     setError('')
-    setSuccessMessage('')
     
     const supabase = createClient()
+    const dummyEmail = `${formattedUsername}@wej.internal`
     
     try {
       if (isLogin) {
         const { error: authError } = await supabase.auth.signInWithPassword({
-          email,
+          email: dummyEmail,
           password,
         })
-        if (authError) throw authError
+        if (authError) {
+          if (authError.message === 'Invalid login credentials') {
+            throw new Error('Invalid username or password')
+          }
+          throw authError
+        }
       } else {
         const { error: authError } = await supabase.auth.signUp({
-          email,
+          email: dummyEmail,
           password,
           options: {
             data: {
-              username: username || email.split('@')[0]
+              username: formattedUsername
             }
           }
         })
-        if (authError) throw authError
-        setSuccessMessage('A confirmation email has been sent to your inbox. Please confirm your email before logging in.')
-        setIsLogin(true)
-        return
+        if (authError) {
+          if (authError.message === 'User already registered') {
+            throw new Error('Username already taken')
+          }
+          throw authError
+        }
       }
       
       router.push('/')
       router.refresh()
     } catch (err: any) {
-      if (err.message === 'Email not confirmed') {
-        setError('Please check your email and confirm your address before logging in.')
-      } else {
-        setError(err.message)
-      }
+      setError(err.message)
     } finally {
       setLoading(false)
     }
@@ -73,64 +86,25 @@ export default function Login() {
         {error && (
           <div className="p-4 mb-6 text-sm text-red-500 bg-red-500/10 rounded-lg flex flex-col gap-2">
             <span>{error}</span>
-            {error.includes('confirm your address') && (
-              <button 
-                onClick={async () => {
-                  setResendLoading(true)
-                  setError('')
-                  setSuccessMessage('')
-                  try {
-                    const supabase = createClient()
-                    const { error: resendError } = await supabase.auth.resend({
-                      type: 'signup',
-                      email,
-                    })
-                    if (resendError) {
-                      setError('Could not resend email. It might be disabled or already confirmed.')
-                    } else {
-                      setSuccessMessage('Confirmation email resent! Please check your inbox.')
-                    }
-                  } catch (err) {
-                    setError('An unexpected error occurred.')
-                  } finally {
-                    setResendLoading(false)
-                  }
-                }}
-                disabled={resendLoading}
-                className="self-start text-xs font-bold underline hover:no-underline disabled:opacity-50"
-                type="button"
-              >
-                {resendLoading ? 'Resending...' : 'Resend confirmation email'}
-              </button>
-            )}
           </div>
         )}
 
-        {successMessage && (
-          <div className="p-4 mb-6 text-sm text-green-500 bg-green-500/10 rounded-lg">
-            {successMessage}
+        {!isLogin && (
+          <div className="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-xl flex gap-3 text-yellow-600 dark:text-yellow-500">
+            <AlertTriangle className="shrink-0 mt-0.5" size={20} />
+            <p className="text-sm font-medium leading-relaxed">
+              Your username and password cannot be recovered. If you lose them, your points and content will be permanently lost. Store them safely.
+            </p>
           </div>
         )}
 
         <form onSubmit={handleAuth} className="space-y-4">
-          {!isLogin && (
-            <div>
-              <label className="block text-sm font-medium mb-1 text-muted">Username</label>
-              <input 
-                type="text" 
-                value={username}
-                onChange={e => setUsername(e.target.value)}
-                className="w-full bg-accent text-foreground rounded-xl p-3 outline-none focus:ring-2 focus:ring-foreground transition-shadow"
-                required={!isLogin}
-              />
-            </div>
-          )}
           <div>
-            <label className="block text-sm font-medium mb-1 text-muted">Email</label>
+            <label className="block text-sm font-medium mb-1 text-muted">Username</label>
             <input 
-              type="email" 
-              value={email}
-              onChange={e => setEmail(e.target.value)}
+              type="text" 
+              value={username}
+              onChange={e => setUsername(e.target.value)}
               className="w-full bg-accent text-foreground rounded-xl p-3 outline-none focus:ring-2 focus:ring-foreground transition-shadow"
               required
             />
@@ -145,6 +119,19 @@ export default function Login() {
               required
             />
           </div>
+          
+          {!isLogin && (
+            <div>
+              <label className="block text-sm font-medium mb-1 text-muted">Confirm Password</label>
+              <input 
+                type="password" 
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                className="w-full bg-accent text-foreground rounded-xl p-3 outline-none focus:ring-2 focus:ring-foreground transition-shadow"
+                required
+              />
+            </div>
+          )}
 
           <button 
             type="submit" 
@@ -158,8 +145,12 @@ export default function Login() {
         <p className="text-center mt-6 text-sm text-muted">
           {isLogin ? "Don't have an account? " : "Already have an account? "}
           <button 
-            onClick={() => setIsLogin(!isLogin)} 
+            onClick={() => {
+              setIsLogin(!isLogin)
+              setError('')
+            }} 
             className="text-foreground font-semibold hover:underline"
+            type="button"
           >
             {isLogin ? 'Sign up' : 'Log in'}
           </button>
